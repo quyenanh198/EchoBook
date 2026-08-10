@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -5,12 +7,12 @@ import 'package:uuid/uuid.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../data/db/app_database.dart';
 import '../../../data/db/tables.dart';
-import '../../../services/tts/flutter_tts_engine.dart';
 import '../../../services/tts/system_voice.dart';
+import '../../../services/tts/voice_engine_factory.dart';
 import '../../../services/voice_clone/voice_clone_service.dart';
 
 final systemVoicesProvider = FutureProvider<List<SystemVoice>>((ref) async {
-  final engine = FlutterTtsEngine();
+  final engine = VoiceEngineFactory.create();
   try {
     return await engine.getVoices();
   } finally {
@@ -37,9 +39,15 @@ final defaultVoiceBootstrapProvider = FutureProvider<void>((ref) async {
   final voices = await ref.watch(systemVoicesProvider.future);
   if (voices.isEmpty) return;
 
+  // Prefer a voice matching the device's own language (e.g. Vietnamese on a
+  // vi_VN system) before falling back to English, then to whatever's first.
+  final systemLanguage = Platform.localeName.split(RegExp('[_.-]')).first.toLowerCase();
   final preferred = voices.firstWhere(
-    (v) => v.locale.toLowerCase().startsWith('en'),
-    orElse: () => voices.first,
+    (v) => v.locale.toLowerCase().startsWith(systemLanguage),
+    orElse: () => voices.firstWhere(
+      (v) => v.locale.toLowerCase().startsWith('en'),
+      orElse: () => voices.first,
+    ),
   );
 
   await repo.upsert(VoiceProfilesCompanion.insert(

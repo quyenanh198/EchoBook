@@ -52,46 +52,63 @@ class _CloneVoiceSheetState extends ConsumerState<_CloneVoiceSheet> {
   }
 
   Future<void> _toggleRecording() async {
-    if (_isRecording) {
-      final path = await _recorder.stop();
-      _ticker?.cancel();
+    try {
+      if (_isRecording) {
+        final path = await _recorder.stop();
+        _ticker?.cancel();
+        if (!mounted) return;
+        setState(() {
+          _isRecording = false;
+          _samplePath = path;
+        });
+        return;
+      }
+
+      final hasPermission = await _recorder.hasPermission();
+      if (!hasPermission) {
+        if (mounted) setState(() => _error = 'Microphone permission was denied.');
+        return;
+      }
+
+      final path = await VoicePaths.newSamplePath(_uuid.v4());
+      await _recorder.start(const RecordConfig(encoder: AudioEncoder.wav), path: path);
+      if (!mounted) return;
       setState(() {
-        _isRecording = false;
-        _samplePath = path;
+        _isRecording = true;
+        _samplePath = null;
+        _elapsed = Duration.zero;
+        _error = null;
       });
-      return;
+      _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+        setState(() => _elapsed += const Duration(seconds: 1));
+      });
+    } catch (e) {
+      _ticker?.cancel();
+      if (mounted) {
+        setState(() {
+          _isRecording = false;
+          _error = 'Recording is unavailable: $e';
+        });
+      }
     }
-
-    final hasPermission = await _recorder.hasPermission();
-    if (!hasPermission) {
-      setState(() => _error = 'Microphone permission was denied.');
-      return;
-    }
-
-    final path = await VoicePaths.newSamplePath(_uuid.v4());
-    await _recorder.start(const RecordConfig(encoder: AudioEncoder.wav), path: path);
-    setState(() {
-      _isRecording = true;
-      _samplePath = null;
-      _elapsed = Duration.zero;
-      _error = null;
-    });
-    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-      setState(() => _elapsed += const Duration(seconds: 1));
-    });
   }
 
   Future<void> _uploadSample() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['wav', 'mp3', 'm4a', 'aac'],
-    );
-    final path = result?.files.single.path;
-    if (path == null) return;
-    setState(() {
-      _samplePath = path;
-      _error = null;
-    });
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['wav', 'mp3', 'm4a', 'aac'],
+      );
+      final path = result?.files.single.path;
+      if (path == null) return;
+      if (!mounted) return;
+      setState(() {
+        _samplePath = path;
+        _error = null;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Could not open file picker: $e');
+    }
   }
 
   Future<void> _save() async {

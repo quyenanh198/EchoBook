@@ -67,6 +67,10 @@ class FakeVoiceEngine implements VoiceEngine {
 }
 
 void main() {
+  // AppMessenger (used by PlayerController to report engine failures) reads
+  // a GlobalKey, which needs a widgets binding even outside a widget test.
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late AppDatabase db;
   late FakeVoiceEngine fakeEngine;
   late ProviderContainer container;
@@ -207,4 +211,103 @@ void main() {
     expect(state.isPlaying, isFalse);
     expect(state.bookId, isNull);
   });
+
+  group('engine failures are reported, never left to crash the app', () {
+    late FailingVoiceEngine failingEngine;
+    late StateNotifierProvider<PlayerController, PlayerState> failingProvider;
+
+    setUp(() {
+      failingEngine = FailingVoiceEngine();
+      failingProvider = StateNotifierProvider<PlayerController, PlayerState>(
+        (ref) => PlayerController(ref, engine: failingEngine),
+      );
+    });
+
+    test('a speak() failure mid-playback stops cleanly and records errorMessage', () async {
+      final controller = container.read(failingProvider.notifier);
+
+      // Reaches the loop and starts speaking before the engine misbehaves.
+      failingEngine.throwOnSpeak = false;
+      await controller.playFrom(bookId: 'book-1', bookTitle: 'Test Book', chapters: chapters, chapterIndex: 0);
+      failingEngine.throwOnSpeak = true;
+      failingEngine.completeNextSpeak();
+      await pump();
+
+      final state = container.read(failingProvider);
+      expect(state.isPlaying, isFalse);
+      expect(state.errorMessage, contains('Voice playback failed'));
+    });
+
+    test('a setVoice() failure is reported without throwing', () async {
+      final controller = container.read(failingProvider.notifier);
+      failingEngine.throwOnSetVoice = true;
+
+      await controller.setVoice(const SystemVoice(name: 'x', locale: 'en'));
+
+      expect(container.read(failingProvider).errorMessage, contains('Voice playback failed'));
+    });
+
+    test('playFrom() surfaces an engine setup failure instead of throwing', () async {
+      final controller = container.read(failingProvider.notifier);
+      failingEngine.throwOnStop = true;
+
+      await controller.playFrom(bookId: 'book-1', bookTitle: 'Test Book', chapters: chapters, chapterIndex: 0);
+
+      final state = container.read(failingProvider);
+      expect(state.isActive, isFalse);
+      expect(state.errorMessage, contains('Voice playback failed'));
+    });
+  });
+}
+
+/// Fake [VoiceEngine] whose methods can be told to throw on demand — used to
+/// prove engine failures (e.g. a missing native TTS plugin) surface as
+/// recoverable `PlayerState.errorMessage` instead of an uncaught exception.
+class FailingVoiceEngine implements VoiceEngine {
+  final List<Completer<void>> _pending = [];
+  bool throwOnSpeak = false;
+  bool throwOnStop = false;
+  bool throwOnSetVoice = false;
+
+  @override
+  Future<void> speak(String text) {
+    if (throwOnSpeak) throw Exception('engine unavailable');
+    final completer = Completer<void>();
+    _pending.add(completer);
+    return completer.future;
+  }
+
+  void completeNextSpeak() {
+    final completer = _pending.removeAt(0);
+    if (!completer.isCompleted) completer.complete();
+  }
+
+  @override
+  Future<void> stop() async {
+    if (throwOnStop) throw Exception('stop unavailable');
+    for (final c in _pending) {
+      if (!c.isCompleted) c.complete();
+    }
+    _pending.clear();
+  }
+
+  @override
+  Future<void> pause() => stop();
+
+  @override
+  Future<void> setSpeed(double speed) async {}
+
+  @override
+  Future<void> setPitch(double pitch) async {}
+
+  @override
+  Future<void> setVoice(SystemVoice voice) async {
+    if (throwOnSetVoice) throw Exception('voice unavailable');
+  }
+
+  @override
+  Future<List<SystemVoice>> getVoices() async => const [];
+
+  @override
+  void dispose() {}
 }

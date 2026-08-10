@@ -1,9 +1,29 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app.dart';
 
 void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-  runApp(const ProviderScope(child: EchoBookApp()));
+  // Catches anything that slips past a call site's own error handling
+  // (e.g. a native plugin/platform-channel failure) so it's logged instead
+  // of tearing down the whole desktop process.
+  runZonedGuarded(() {
+    WidgetsFlutterBinding.ensureInitialized();
+
+    FlutterError.onError = (details) {
+      FlutterError.presentError(details);
+      debugPrint('Uncaught Flutter error: ${details.exceptionAsString()}');
+    };
+    PlatformDispatcher.instance.onError = (error, stack) {
+      debugPrint('Uncaught platform error: $error\n$stack');
+      return true;
+    };
+
+    runApp(const ProviderScope(child: EchoBookApp()));
+  }, (error, stack) {
+    debugPrint('Uncaught zone error: $error\n$stack');
+  });
 }

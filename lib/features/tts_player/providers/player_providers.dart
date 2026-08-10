@@ -3,12 +3,13 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/core_providers.dart';
+import '../../../core/utils/app_messenger.dart';
 import '../../../core/utils/progress_math.dart';
 import '../../../core/utils/sentence_splitter.dart';
 import '../../../services/parsing/parsed_book.dart';
-import '../../../services/tts/flutter_tts_engine.dart';
 import '../../../services/tts/system_voice.dart';
 import '../../../services/tts/voice_engine.dart';
+import '../../../services/tts/voice_engine_factory.dart';
 
 class PlayerState {
   final bool isActive;
@@ -26,6 +27,7 @@ class PlayerState {
   final double pitch;
   final Duration? sleepTimerRemaining;
   final double overallFraction;
+  final String? errorMessage;
 
   const PlayerState({
     this.isActive = false,
@@ -43,6 +45,7 @@ class PlayerState {
     this.pitch = 1.0,
     this.sleepTimerRemaining,
     this.overallFraction = 0,
+    this.errorMessage,
   });
 
   PlayerState copyWith({
@@ -62,6 +65,8 @@ class PlayerState {
     Duration? sleepTimerRemaining,
     bool clearSleepTimer = false,
     double? overallFraction,
+    String? errorMessage,
+    bool clearError = false,
   }) {
     return PlayerState(
       isActive: isActive ?? this.isActive,
@@ -80,6 +85,7 @@ class PlayerState {
       sleepTimerRemaining:
           clearSleepTimer ? null : (sleepTimerRemaining ?? this.sleepTimerRemaining),
       overallFraction: overallFraction ?? this.overallFraction,
+      errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
     );
   }
 }
@@ -98,10 +104,19 @@ class PlayerController extends StateNotifier<PlayerState> {
   Timer? _sleepTickTimer;
 
   PlayerController(this._ref, {VoiceEngine? engine})
-      : _engine = engine ?? FlutterTtsEngine(),
+      : _engine = engine ?? VoiceEngineFactory.create(),
         super(const PlayerState());
 
   List<Sentence> get currentSentences => _sentences;
+
+  /// Reports an engine failure (missing native TTS backend, unavailable
+  /// voice, etc.) as recoverable state + a SnackBar instead of letting the
+  /// exception propagate uncaught, which is what used to take the whole app
+  /// down when e.g. the platform's TTS plugin wasn't available.
+  void _handleEngineError(Object error) {
+    state = state.copyWith(isPlaying: false, errorMessage: 'Voice playback failed: $error');
+    AppMessenger.showError('Voice playback failed: $error');
+  }
 
   Future<void> playFrom({
     required String bookId,
@@ -112,24 +127,50 @@ class PlayerController extends StateNotifier<PlayerState> {
   }) async {
     _playToken++;
     final token = _playToken;
-    await _engine.stop();
+    try {
+      await _engine.stop();
 
-    final defaultVoice = await _ref.read(voiceRepositoryProvider).getDefault();
-    var speed = state.speed;
-    var pitch = state.pitch;
-    if (defaultVoice != null) {
-      speed = defaultVoice.speed;
-      pitch = defaultVoice.pitch;
-      if (defaultVoice.systemVoiceId != null && defaultVoice.systemVoiceLocale != null) {
-        await _engine.setVoice(
-          SystemVoice(name: defaultVoice.systemVoiceId!, locale: defaultVoice.systemVoiceLocale!),
-        );
+      final defaultVoice = await _ref.read(voiceRepositoryProvider).getDefault();
+      var speed = state.speed;
+      var pitch = state.pitch;
+      if (defaultVoice != null) {
+        speed = defaultVoice.speed;
+        pitch = defaultVoice.pitch;
+        if (defaultVoice.systemVoiceId != null && defaultVoice.systemVoiceLocale != null) {
+          await _engine.setVoice(
+            SystemVoice(name: defaultVoice.systemVoiceId!, locale: defaultVoice.systemVoiceLocale!),
+          );
+        }
+        await _engine.setSpeed(speed);
+        await _engine.setPitch(pitch);
       }
-      await _engine.setSpeed(speed);
-      await _engine.setPitch(pitch);
+      if (token != _playToken) return;
+      await _playFromReady(
+        token: token,
+        bookId: bookId,
+        bookTitle: bookTitle,
+        chapters: chapters,
+        chapterIndex: chapterIndex,
+        charOffset: charOffset,
+        speed: speed,
+        pitch: pitch,
+      );
+    } catch (e) {
+      if (token != _playToken) return;
+      _handleEngineError(e);
     }
-    if (token != _playToken) return;
+  }
 
+  Future<void> _playFromReady({
+    required int token,
+    required String bookId,
+    required String bookTitle,
+    required List<ParsedChapter> chapters,
+    required int chapterIndex,
+    required int charOffset,
+    required double speed,
+    required double pitch,
+  }) async {
     _chapters = chapters;
     _lengthIndex = BookLengthIndex.fromChapters(chapters);
     _loadChapterSentences(chapterIndex);
@@ -148,6 +189,7 @@ class PlayerController extends StateNotifier<PlayerState> {
       currentSentenceText: _sentences.isNotEmpty ? _sentences[startSentence].text : '',
       speed: speed,
       pitch: pitch,
+      clearError: true,
     );
 
     unawaited(_runLoop(token));
@@ -172,7 +214,13 @@ class PlayerController extends StateNotifier<PlayerState> {
 
       final sentence = _sentences[state.sentenceIndex];
       state = state.copyWith(currentSentenceText: sentence.text);
-      await _engine.speak(sentence.text);
+      try {
+        await _engine.speak(sentence.text);
+      } catch (e) {
+        if (token != _playToken) return;
+        _handleEngineError(e);
+        return;
+      }
       if (token != _playToken) return;
       if (!state.isPlaying) return; // paused/stopped mid-utterance
 
@@ -213,10 +261,20 @@ class PlayerController extends StateNotifier<PlayerState> {
         );
   }
 
+  /// Best-effort engine stop — a failure here (e.g. the engine is already
+  /// dead) shouldn't block the state transition the caller is making.
+  Future<void> _safeStop() async {
+    try {
+      await _engine.stop();
+    } catch (_) {
+      // Ignored: we're stopping anyway, nothing meaningful to recover.
+    }
+  }
+
   Future<void> togglePlayPause() async {
     if (state.isPlaying) {
       state = state.copyWith(isPlaying: false);
-      await _engine.stop();
+      await _safeStop();
     } else {
       state = state.copyWith(isPlaying: true);
       unawaited(_runLoop(_playToken));
@@ -225,7 +283,7 @@ class PlayerController extends StateNotifier<PlayerState> {
 
   Future<void> stop() async {
     _playToken++;
-    await _engine.stop();
+    await _safeStop();
     _cancelSleepTimer();
     state = const PlayerState();
   }
@@ -234,7 +292,7 @@ class PlayerController extends StateNotifier<PlayerState> {
     if (_sentences.isEmpty) return;
     _playToken++;
     final token = _playToken;
-    await _engine.stop();
+    await _safeStop();
 
     var newIndex = state.sentenceIndex + delta;
     if (newIndex < 0) {
@@ -271,16 +329,28 @@ class PlayerController extends StateNotifier<PlayerState> {
 
   Future<void> setSpeed(double speed) async {
     state = state.copyWith(speed: speed);
-    await _engine.setSpeed(speed);
+    try {
+      await _engine.setSpeed(speed);
+    } catch (e) {
+      _handleEngineError(e);
+    }
   }
 
   Future<void> setPitch(double pitch) async {
     state = state.copyWith(pitch: pitch);
-    await _engine.setPitch(pitch);
+    try {
+      await _engine.setPitch(pitch);
+    } catch (e) {
+      _handleEngineError(e);
+    }
   }
 
   Future<void> setVoice(SystemVoice voice) async {
-    await _engine.setVoice(voice);
+    try {
+      await _engine.setVoice(voice);
+    } catch (e) {
+      _handleEngineError(e);
+    }
   }
 
   Future<List<SystemVoice>> getSystemVoices() => _engine.getVoices();
@@ -310,7 +380,11 @@ class PlayerController extends StateNotifier<PlayerState> {
   @override
   void dispose() {
     _cancelSleepTimer();
-    _engine.dispose();
+    try {
+      _engine.dispose();
+    } catch (_) {
+      // Ignored: the controller is going away regardless.
+    }
     super.dispose();
   }
 }
