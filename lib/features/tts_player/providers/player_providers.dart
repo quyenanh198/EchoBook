@@ -11,6 +11,7 @@ import '../../../services/parsing/parsed_book.dart';
 import '../../../services/tts/system_voice.dart';
 import '../../../services/tts/voice_engine.dart';
 import '../../../services/tts/voice_engine_factory.dart';
+import 'sleep_timer_controller.dart';
 
 class PlayerState {
   final bool isActive;
@@ -102,7 +103,7 @@ class PlayerController extends StateNotifier<PlayerState> {
   List<Sentence> _sentences = const [];
   BookLengthIndex _lengthIndex = const BookLengthIndex([], 1);
   int _playToken = 0;
-  Timer? _sleepTickTimer;
+  final SleepTimerController _sleepTimer = SleepTimerController();
 
   PlayerController(this._ref, {VoiceEngine? engine})
       : _engine = engine ?? VoiceEngineFactory.create(),
@@ -310,7 +311,7 @@ class PlayerController extends StateNotifier<PlayerState> {
   Future<void> stop() async {
     _playToken++;
     await _safeStop();
-    _cancelSleepTimer();
+    _sleepTimer.cancel();
     state = const PlayerState();
   }
 
@@ -382,25 +383,16 @@ class PlayerController extends StateNotifier<PlayerState> {
   Future<List<SystemVoice>> getSystemVoices() => _engine.getVoices();
 
   void setSleepTimer(Duration? duration) {
-    _cancelSleepTimer();
-    if (duration == null) return;
-    state = state.copyWith(sleepTimerRemaining: duration);
-    _sleepTickTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      final remaining = state.sleepTimerRemaining;
-      if (remaining == null) return;
-      final next = remaining - const Duration(seconds: 1);
-      if (next.isNegative || next == Duration.zero) {
-        stop();
-      } else {
-        state = state.copyWith(sleepTimerRemaining: next);
-      }
-    });
-  }
-
-  void _cancelSleepTimer() {
-    _sleepTickTimer?.cancel();
-    _sleepTickTimer = null;
-    state = state.copyWith(clearSleepTimer: true);
+    if (duration == null) {
+      _sleepTimer.cancel();
+      state = state.copyWith(clearSleepTimer: true);
+      return;
+    }
+    _sleepTimer.start(
+      duration,
+      onTick: (remaining) => state = state.copyWith(sleepTimerRemaining: remaining),
+      onExpire: stop,
+    );
   }
 
   @override
@@ -411,7 +403,7 @@ class PlayerController extends StateNotifier<PlayerState> {
     // and fall through to touching `_ref`/`state` on an already-disposed
     // controller.
     _playToken++;
-    _cancelSleepTimer();
+    _sleepTimer.dispose();
     try {
       _engine.dispose();
     } catch (_) {

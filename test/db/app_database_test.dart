@@ -181,6 +181,31 @@ void main() {
       expect(defaults.length, 1);
       expect(defaults.first.id, 'v2');
     });
+
+    test('upsertReturning returns the written row directly, insert and update alike', () async {
+      final repo = VoiceRepository(db);
+
+      final inserted = await repo.upsertReturning(VoiceProfilesCompanion.insert(
+        id: 'v3',
+        name: 'Voice Three',
+        kind: VoiceKind.system,
+        createdAt: DateTime(2026, 1, 1),
+      ));
+      expect(inserted.id, 'v3');
+      expect(inserted.name, 'Voice Three');
+
+      final updated = await repo.upsertReturning(VoiceProfilesCompanion.insert(
+        id: 'v3',
+        name: 'Voice Three Renamed',
+        kind: VoiceKind.system,
+        createdAt: DateTime(2026, 1, 1),
+      ));
+      expect(updated.id, 'v3');
+      expect(updated.name, 'Voice Three Renamed');
+
+      final all = await repo.getAll();
+      expect(all.where((v) => v.id == 'v3'), hasLength(1));
+    });
   });
 
   group('ExportRepository', () {

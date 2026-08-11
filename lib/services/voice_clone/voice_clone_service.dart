@@ -52,9 +52,8 @@ class VoiceCloneService {
     final pitchShift = await pitchShiftFuture;
     final echovoicePath = await echovoicePathFuture;
 
-    final id = _uuid.v4();
-    await _voiceRepository.upsert(VoiceProfilesCompanion.insert(
-      id: id,
+    return _voiceRepository.upsertReturning(VoiceProfilesCompanion.insert(
+      id: _uuid.v4(),
       name: name,
       kind: VoiceKind.cloned,
       systemVoiceId: Value(baseVoice.name),
@@ -65,9 +64,6 @@ class VoiceCloneService {
       pitch: Value(pitchShift),
       createdAt: DateTime.now(),
     ));
-
-    final all = await _voiceRepository.getAll();
-    return all.firstWhere((v) => v.id == id);
   }
 
   /// Attempts a real embedding-based clone via the local AI Server.
@@ -122,7 +118,7 @@ class VoiceCloneService {
     final managedPath = await VoicePaths.newSamplePath(id, extension: 'echovoice');
     await file.copy(managedPath);
 
-    await _voiceRepository.upsert(VoiceProfilesCompanion.insert(
+    return _voiceRepository.upsertReturning(VoiceProfilesCompanion.insert(
       id: id,
       name: name,
       kind: VoiceKind.cloned,
@@ -131,8 +127,5 @@ class VoiceCloneService {
       echovoicePath: Value(managedPath),
       createdAt: DateTime.now(),
     ));
-
-    final all = await _voiceRepository.getAll();
-    return all.firstWhere((v) => v.id == id);
   }
 }
