@@ -14,11 +14,30 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
 
-MODELS_DIR = Path(__file__).parent / "models" / "piper"
+
+def _app_root() -> Path:
+    """
+    Directory the binary/models are expected to live next to.
+
+    When packaged (`sys.frozen` — see package_windows.bat, which builds
+    this with PyInstaller's `--onefile`), that's the folder containing
+    `EchoBookAIServer.exe` itself (NOT PyInstaller's temp extraction dir —
+    piper.exe and the voice models are copied in as loose files alongside
+    the packaged exe, not embedded into the onefile bundle, so a voice can
+    be swapped/upgraded without rebuilding it). In development, it's this
+    source file's own directory.
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).parent
+    return Path(__file__).parent
+
+
+MODELS_DIR = _app_root() / "models" / "piper"
 
 # Maps a friendly voice id (what EchoBook's UI/API uses) to the Piper
 # model filename (without extension) under MODELS_DIR. Download matching
@@ -36,7 +55,21 @@ class PiperUnavailableError(RuntimeError):
 
 class PiperEngine:
     def __init__(self) -> None:
-        self._piper_bin = shutil.which("piper") or shutil.which("piper.exe")
+        self._piper_bin = self._find_piper_binary()
+
+    def _find_piper_binary(self) -> str | None:
+        on_path = shutil.which("piper") or shutil.which("piper.exe")
+        if on_path:
+            return on_path
+        # Bundled next to EchoBookAIServer.exe by package_windows.bat.
+        for candidate in (
+            _app_root() / "piper" / "piper.exe",
+            _app_root() / "piper" / "piper",
+            _app_root() / "piper.exe",
+        ):
+            if candidate.exists():
+                return str(candidate)
+        return None
 
     def is_ready(self) -> bool:
         return self._piper_bin is not None
@@ -45,8 +78,9 @@ class PiperEngine:
         """Synthesizes `text` and returns the path to a rendered WAV file."""
         if not self._piper_bin:
             raise PiperUnavailableError(
-                "piper binary not found on PATH. Download it from "
-                "https://github.com/rhasspy/piper/releases and add it to PATH."
+                "piper binary not found. Download it from "
+                "https://github.com/rhasspy/piper/releases, either add it to PATH "
+                "or place it at ai_server/piper/piper.exe."
             )
 
         model_name = DEFAULT_VOICES.get(voice, voice)

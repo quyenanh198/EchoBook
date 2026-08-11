@@ -1,5 +1,6 @@
 models/piper/*.onnx
 models/piper/*.onnx.json
+piper/
 build/
 dist/
 *.spec

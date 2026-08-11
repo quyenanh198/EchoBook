@@ -48,3 +48,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Packaging output (package_windows.bat / package_android.bat)
+/dist/
+/installer/output/

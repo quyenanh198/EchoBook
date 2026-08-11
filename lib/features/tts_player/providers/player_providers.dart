@@ -6,6 +6,7 @@ import '../../../core/providers/core_providers.dart';
 import '../../../core/utils/app_messenger.dart';
 import '../../../core/utils/progress_math.dart';
 import '../../../core/utils/sentence_splitter.dart';
+import '../../../data/db/app_database.dart';
 import '../../../services/parsing/parsed_book.dart';
 import '../../../services/tts/system_voice.dart';
 import '../../../services/tts/voice_engine.dart';
@@ -118,6 +119,43 @@ class PlayerController extends StateNotifier<PlayerState> {
     AppMessenger.showError('Voice playback failed: $error');
   }
 
+  /// Pushes [profile]'s voice/speed/pitch onto the running engine — the one
+  /// place this happens, used both when starting playback and when the
+  /// user switches the default voice mid-session (see [applyVoiceProfile]),
+  /// so both paths behave identically for every voice kind, including
+  /// cloned ones (whose `systemVoiceId`/`systemVoiceLocale` point at their
+  /// *base* system voice — see `VoiceCloneService`). Returns the
+  /// speed/pitch that ended up applied, for the caller to reflect in
+  /// [PlayerState]. Never catches — callers each have their own
+  /// error-handling `try`/`catch` around this.
+  Future<(double, double)> _applyVoiceProfileToEngine(VoiceProfileRow? profile) async {
+    if (profile == null) return (state.speed, state.pitch);
+    if (profile.systemVoiceId != null && profile.systemVoiceLocale != null) {
+      await _engine.setVoice(
+        SystemVoice(name: profile.systemVoiceId!, locale: profile.systemVoiceLocale!),
+      );
+    }
+    await _engine.setSpeed(profile.speed);
+    await _engine.setPitch(profile.pitch);
+    return (profile.speed, profile.pitch);
+  }
+
+  /// Live-applies [profile] to the currently running engine without
+  /// restarting playback — called when the user picks a different default
+  /// voice (Voices tab → "Set as default") while Listen Mode is already
+  /// active, so the switch is heard on the very next sentence instead of
+  /// only after a manual stop/replay. A no-op if nothing is playing right
+  /// now (the next `playFrom()` will pick up the new default anyway).
+  Future<void> applyVoiceProfile(VoiceProfileRow profile) async {
+    if (!state.isActive) return;
+    try {
+      final (speed, pitch) = await _applyVoiceProfileToEngine(profile);
+      state = state.copyWith(speed: speed, pitch: pitch, clearError: true);
+    } catch (e) {
+      _handleEngineError(e);
+    }
+  }
+
   Future<void> playFrom({
     required String bookId,
     required String bookTitle,
@@ -131,19 +169,7 @@ class PlayerController extends StateNotifier<PlayerState> {
       await _engine.stop();
 
       final defaultVoice = await _ref.read(voiceRepositoryProvider).getDefault();
-      var speed = state.speed;
-      var pitch = state.pitch;
-      if (defaultVoice != null) {
-        speed = defaultVoice.speed;
-        pitch = defaultVoice.pitch;
-        if (defaultVoice.systemVoiceId != null && defaultVoice.systemVoiceLocale != null) {
-          await _engine.setVoice(
-            SystemVoice(name: defaultVoice.systemVoiceId!, locale: defaultVoice.systemVoiceLocale!),
-          );
-        }
-        await _engine.setSpeed(speed);
-        await _engine.setPitch(pitch);
-      }
+      final (speed, pitch) = await _applyVoiceProfileToEngine(defaultVoice);
       if (token != _playToken) return;
       await _playFromReady(
         token: token,

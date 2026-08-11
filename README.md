@@ -95,7 +95,7 @@ The AI Server's other job is `POST /tts/speak`: offline, neural-quality reading 
 - **Vietnamese (or other non-English) TTS voices on Windows/Android/iOS** depend on OS-level language packs, not on EchoBook itself — install them via Windows Settings → Time & Language → Speech → Add voices (or the Android/iOS equivalent). The app lists whatever the OS reports. **On Linux**, Vietnamese works out of the box via the bundled-dependency `espeak-ng` backend — see [Linux TTS](#linux-tts-and-vietnamese-support) above.
 - **Background audio on mobile** — Listen Mode keeps playing while you switch tabs inside the app (it's one process), but continuing playback while the app is fully backgrounded/screen-locked on Android/iOS needs a foreground audio service entitlement this build doesn't configure yet.
 - **PDF chapters** without a bookmark/outline fall back to fixed-size page groups (e.g. "Pages 1-12") rather than true chapter titles — PDFs don't have a structural concept of "chapter" without one.
-- **The local AI Server (`ai_server/`) is Windows-only** and is a separate process you set up yourself (see `ai_server/README.md`) — it isn't packaged into the Flutter build in this repo yet (that's `package_windows.bat`, still to be built). Without it, cloning transparently falls back to the pitch-shift approximation, and `/tts/speak` (Piper) simply isn't available. The Piper Vietnamese voice model is a separate manual download from Hugging Face (see that README) since it's a few hundred MB and not something to bundle in source control.
+- **The local AI Server (`ai_server/`) is Windows-only.** `package_windows.bat` builds and bundles it automatically (including downloading Piper + the Vietnamese voice model). If you build the Flutter app on its own instead (`flutter build windows`) without running that script, `EchoBookAIServer.exe` won't be present — cloning transparently falls back to the pitch-shift approximation, and `/tts/speak` (Piper) simply isn't available; nothing crashes either way.
 - **`.echovoice` embeddings aren't used for playback yet** — they're captured and stored for a future embedding-conditioned synthesis upgrade (e.g. XTTS/YourTTS). Today, a voice cloned via the AI Server still plays back through the pitch-shift-approximated system voice, same as any other Beta-cloned profile.
 
 ## Getting started (development)
@@ -120,6 +120,23 @@ The test suite covers ebook parsing (EPUB built from a real in-memory zip, TXT h
 
 ### Windows (verified — this is the primary target for this build)
 
+**One-shot build, including the AI Server and the installer:**
+
+```bash
+# Install Inno Setup once (for the installer step): winget install JRSoftware.InnoSetup
+package_windows.bat
+```
+
+This sets up `ai_server/`'s Python venv, downloads Piper + a Vietnamese voice
+if not already present, builds `EchoBookAIServer.exe`, builds the Flutter
+app, copies the AI Server + Piper into the release folder together, then
+produces both `installer\output\EchoBook-Setup-<version>.exe` and a portable
+`dist\EchoBook_Windows.zip`. See `ai_server/README.md` for what each piece
+does and how to run/debug them individually.
+
+**Flutter app only** (no AI Server, no installer — cloning falls back to the
+pitch-shift approximation and `/tts/speak` is unavailable):
+
 ```bash
 flutter build windows --release
 ```
@@ -130,9 +147,10 @@ Output: `build\windows\x64\runner\Release\echobook.exe` (plus its required DLLs 
 
 **If you hit a CMake install error about `native_assets` or a missing directory under `build\native_assets\windows`:** this is a known Flutter/CMake ordering quirk on some 3.32.x installs — create the folder once (`mkdir build\native_assets\windows`) and rebuild.
 
-#### Windows installer (Inno Setup)
+#### Windows installer (Inno Setup) — standalone
 
-`installer/echobook.iss` packages the Release build into a proper `Setup.exe` — Start Menu shortcut, optional desktop icon, clean uninstaller, no admin rights required (installs per-user by default).
+`package_windows.bat` runs this automatically. To do just this step by hand
+(e.g. after an app-only build above):
 
 ```bash
 flutter build windows --release
@@ -140,7 +158,7 @@ flutter build windows --release
 "C:\Users\<you>\AppData\Local\Programs\Inno Setup 6\ISCC.exe" installer\echobook.iss
 ```
 
-Output: `installer\output\EchoBook-Setup-<version>.exe`. Verified end-to-end in this build: silent install, launch, and clean uninstall (including Start Menu shortcuts) all confirmed working.
+Output: `installer\output\EchoBook-Setup-<version>.exe` — Start Menu shortcut, optional desktop icon, clean uninstaller, no admin rights required (installs per-user by default). `[Files]` copies the entire release folder recursively, so anything `package_windows.bat` bundled in there (`EchoBookAIServer.exe`, `piper\`, `models\`) is picked up automatically — the `.iss` script itself needs no changes when the AI Server is present or absent.
 
 ### Android
 

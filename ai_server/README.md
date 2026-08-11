@@ -90,12 +90,22 @@ runtime, just a JSON parser:
 
 ## Packaging into `EchoBookAIServer.exe`
 
-Referenced by `package_windows.bat` (see the top-level packaging plan):
+Handled end-to-end by `package_windows.bat` at the repo root — it sets up
+this venv, downloads Piper + the Vietnamese voice if missing, builds this
+server with PyInstaller, builds the Flutter app, and copies everything into
+the release folder together (see that script and the top-level README's
+[Windows build section](../README.md#windows-verified--this-is-the-primary-target-for-this-build)).
+
+To do just the PyInstaller step by hand:
 
 ```powershell
-pyinstaller --onefile --name EchoBookAIServer main.py
+pyinstaller --noconfirm --onefile --name EchoBookAIServer main.py
 ```
 
-Copy the resulting `dist/EchoBookAIServer.exe` next to `echobook.exe` in
-the Flutter Windows release build — `AiServerManager` looks for it right
-there, alongside the Flutter binary.
+`dist/EchoBookAIServer.exe` then needs to sit next to `echobook.exe` in the
+Flutter Windows release build — `AiServerManager` looks for it right there,
+alongside the Flutter binary. `piper/piper.exe` and `models/piper/*.onnx*`
+are **not** embedded into the onefile exe (so a voice model can be swapped
+without rebuilding) — they need to be copied in as loose files alongside
+it too; `PiperEngine._app_root()` resolves relative to wherever
+`EchoBookAIServer.exe` actually is, both in dev and once packaged.

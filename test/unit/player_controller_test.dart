@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:drift/native.dart';
 import 'package:echobook/core/providers/core_providers.dart';
 import 'package:echobook/data/db/app_database.dart';
+import 'package:echobook/data/db/tables.dart';
 import 'package:echobook/features/tts_player/providers/player_providers.dart';
 import 'package:echobook/services/parsing/parsed_book.dart';
 import 'package:echobook/services/tts/system_voice.dart';
@@ -212,6 +213,68 @@ void main() {
     expect(state.bookId, isNull);
   });
 
+  group('applyVoiceProfile — switching voices mid-session', () {
+    VoiceProfileRow voiceProfile({
+      required String id,
+      String systemVoiceId = 'Microsoft David',
+      String systemVoiceLocale = 'en-US',
+      double speed = 1.0,
+      double pitch = 1.0,
+      String kind = VoiceKind.system,
+    }) {
+      return VoiceProfileRow(
+        id: id,
+        name: id,
+        kind: kind,
+        systemVoiceId: systemVoiceId,
+        systemVoiceLocale: systemVoiceLocale,
+        sampleAudioPath: null,
+        echovoicePath: null,
+        pitchShift: 0,
+        speed: speed,
+        pitch: pitch,
+        isDefault: false,
+        createdAt: DateTime(2026, 1, 1),
+      );
+    }
+
+    test('is a no-op when nothing is playing — next playFrom() picks it up instead', () async {
+      final controller = container.read(testProvider.notifier);
+
+      await controller.applyVoiceProfile(voiceProfile(id: 'v1'));
+
+      expect(fakeEngine.lastVoice, isNull);
+      expect(container.read(testProvider).isActive, isFalse);
+    });
+
+    test('pushes voice/speed/pitch onto the running engine immediately, for a cloned voice too', () async {
+      final controller = container.read(testProvider.notifier);
+      await controller.playFrom(bookId: 'book-1', bookTitle: 'Test Book', chapters: chapters, chapterIndex: 0);
+      await pump();
+
+      // A cloned profile's systemVoiceId/systemVoiceLocale point at its
+      // *base* system voice (see VoiceCloneService) — applying it should
+      // work exactly the same as a plain system voice.
+      final cloned = voiceProfile(
+        id: 'cloned-1',
+        kind: VoiceKind.cloned,
+        systemVoiceId: 'vi_VN-vais1000-medium',
+        systemVoiceLocale: 'vi-VN',
+        speed: 1.4,
+        pitch: 0.8,
+      );
+      await controller.applyVoiceProfile(cloned);
+
+      expect(fakeEngine.lastVoice, const SystemVoice(name: 'vi_VN-vais1000-medium', locale: 'vi-VN'));
+      expect(fakeEngine.lastSpeed, 1.4);
+      expect(fakeEngine.lastPitch, 0.8);
+      final state = container.read(testProvider);
+      expect(state.speed, 1.4);
+      expect(state.pitch, 0.8);
+      expect(state.errorMessage, isNull);
+    });
+  });
+
   group('engine failures are reported, never left to crash the app', () {
     late FailingVoiceEngine failingEngine;
     late StateNotifierProvider<PlayerController, PlayerState> failingProvider;
@@ -256,6 +319,29 @@ void main() {
       final state = container.read(failingProvider);
       expect(state.isActive, isFalse);
       expect(state.errorMessage, contains('Voice playback failed'));
+    });
+
+    test('switching to a cloned voice mid-playback reports a failure without throwing', () async {
+      final controller = container.read(failingProvider.notifier);
+      await controller.playFrom(bookId: 'book-1', bookTitle: 'Test Book', chapters: chapters, chapterIndex: 0);
+      failingEngine.throwOnSetVoice = true;
+
+      await controller.applyVoiceProfile(VoiceProfileRow(
+        id: 'cloned-1',
+        name: 'My Voice',
+        kind: VoiceKind.cloned,
+        systemVoiceId: 'Microsoft David',
+        systemVoiceLocale: 'en-US',
+        sampleAudioPath: null,
+        echovoicePath: null,
+        pitchShift: 0,
+        speed: 1.0,
+        pitch: 1.0,
+        isDefault: true,
+        createdAt: DateTime(2026, 1, 1),
+      ));
+
+      expect(container.read(failingProvider).errorMessage, contains('Voice playback failed'));
     });
   });
 }

@@ -7,6 +7,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/db/app_database.dart';
 import '../../../data/db/tables.dart';
+import '../../tts_player/providers/player_providers.dart';
 
 class VoiceCard extends ConsumerStatefulWidget {
   final VoiceProfileRow profile;
@@ -27,6 +28,15 @@ class _VoiceCardState extends ConsumerState<VoiceCard> {
           speed: speed != null ? Value(speed) : const Value.absent(),
           pitch: pitch != null ? Value(pitch) : const Value.absent(),
         ));
+  }
+
+  /// Sets [profile] as the default voice, and — if Listen Mode is already
+  /// playing — applies it to the running engine immediately (any voice
+  /// kind, including cloned ones), instead of leaving the old voice
+  /// speaking until the user manually stops and replays.
+  Future<void> _setAsDefault(VoiceProfileRow profile) async {
+    await ref.read(voiceRepositoryProvider).setDefault(profile.id);
+    await ref.read(playerControllerProvider.notifier).applyVoiceProfile(profile);
   }
 
   @override
@@ -107,9 +117,7 @@ class _VoiceCardState extends ConsumerState<VoiceCard> {
                         child: OutlinedButton.icon(
                           icon: Icon(profile.isDefault ? Icons.star : Icons.star_border),
                           label: Text(profile.isDefault ? 'Default voice' : 'Set as default'),
-                          onPressed: profile.isDefault
-                              ? null
-                              : () => ref.read(voiceRepositoryProvider).setDefault(profile.id),
+                          onPressed: profile.isDefault ? null : () => _setAsDefault(profile),
                         ),
                       ),
                       const SizedBox(width: 8),
