@@ -1639,6 +1639,17 @@ class $VoiceProfilesTable extends VoiceProfiles
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _echovoicePathMeta = const VerificationMeta(
+    'echovoicePath',
+  );
+  @override
+  late final GeneratedColumn<String> echovoicePath = GeneratedColumn<String>(
+    'echovoice_path',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _pitchShiftMeta = const VerificationMeta(
     'pitchShift',
   );
@@ -1705,6 +1716,7 @@ class $VoiceProfilesTable extends VoiceProfiles
     systemVoiceId,
     systemVoiceLocale,
     sampleAudioPath,
+    echovoicePath,
     pitchShift,
     speed,
     pitch,
@@ -1768,6 +1780,15 @@ class $VoiceProfilesTable extends VoiceProfiles
         sampleAudioPath.isAcceptableOrUnknown(
           data['sample_audio_path']!,
           _sampleAudioPathMeta,
+        ),
+      );
+    }
+    if (data.containsKey('echovoice_path')) {
+      context.handle(
+        _echovoicePathMeta,
+        echovoicePath.isAcceptableOrUnknown(
+          data['echovoice_path']!,
+          _echovoicePathMeta,
         ),
       );
     }
@@ -1836,6 +1857,10 @@ class $VoiceProfilesTable extends VoiceProfiles
         DriftSqlType.string,
         data['${effectivePrefix}sample_audio_path'],
       ),
+      echovoicePath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}echovoice_path'],
+      ),
       pitchShift: attachedDatabase.typeMapping.read(
         DriftSqlType.double,
         data['${effectivePrefix}pitch_shift'],
@@ -1872,6 +1897,12 @@ class VoiceProfileRow extends DataClass implements Insertable<VoiceProfileRow> {
   final String? systemVoiceId;
   final String? systemVoiceLocale;
   final String? sampleAudioPath;
+
+  /// Path to a `.echovoice` file (speaker embedding produced by the local
+  /// AI Server, or imported from one) — see `ai_server/` and
+  /// `VoiceCloneService`. Null for profiles that only have the offline
+  /// pitch-shift approximation.
+  final String? echovoicePath;
   final double pitchShift;
   final double speed;
   final double pitch;
@@ -1884,6 +1915,7 @@ class VoiceProfileRow extends DataClass implements Insertable<VoiceProfileRow> {
     this.systemVoiceId,
     this.systemVoiceLocale,
     this.sampleAudioPath,
+    this.echovoicePath,
     required this.pitchShift,
     required this.speed,
     required this.pitch,
@@ -1904,6 +1936,9 @@ class VoiceProfileRow extends DataClass implements Insertable<VoiceProfileRow> {
     }
     if (!nullToAbsent || sampleAudioPath != null) {
       map['sample_audio_path'] = Variable<String>(sampleAudioPath);
+    }
+    if (!nullToAbsent || echovoicePath != null) {
+      map['echovoice_path'] = Variable<String>(echovoicePath);
     }
     map['pitch_shift'] = Variable<double>(pitchShift);
     map['speed'] = Variable<double>(speed);
@@ -1927,6 +1962,9 @@ class VoiceProfileRow extends DataClass implements Insertable<VoiceProfileRow> {
       sampleAudioPath: sampleAudioPath == null && nullToAbsent
           ? const Value.absent()
           : Value(sampleAudioPath),
+      echovoicePath: echovoicePath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(echovoicePath),
       pitchShift: Value(pitchShift),
       speed: Value(speed),
       pitch: Value(pitch),
@@ -1949,6 +1987,7 @@ class VoiceProfileRow extends DataClass implements Insertable<VoiceProfileRow> {
         json['systemVoiceLocale'],
       ),
       sampleAudioPath: serializer.fromJson<String?>(json['sampleAudioPath']),
+      echovoicePath: serializer.fromJson<String?>(json['echovoicePath']),
       pitchShift: serializer.fromJson<double>(json['pitchShift']),
       speed: serializer.fromJson<double>(json['speed']),
       pitch: serializer.fromJson<double>(json['pitch']),
@@ -1966,6 +2005,7 @@ class VoiceProfileRow extends DataClass implements Insertable<VoiceProfileRow> {
       'systemVoiceId': serializer.toJson<String?>(systemVoiceId),
       'systemVoiceLocale': serializer.toJson<String?>(systemVoiceLocale),
       'sampleAudioPath': serializer.toJson<String?>(sampleAudioPath),
+      'echovoicePath': serializer.toJson<String?>(echovoicePath),
       'pitchShift': serializer.toJson<double>(pitchShift),
       'speed': serializer.toJson<double>(speed),
       'pitch': serializer.toJson<double>(pitch),
@@ -1981,6 +2021,7 @@ class VoiceProfileRow extends DataClass implements Insertable<VoiceProfileRow> {
     Value<String?> systemVoiceId = const Value.absent(),
     Value<String?> systemVoiceLocale = const Value.absent(),
     Value<String?> sampleAudioPath = const Value.absent(),
+    Value<String?> echovoicePath = const Value.absent(),
     double? pitchShift,
     double? speed,
     double? pitch,
@@ -1999,6 +2040,9 @@ class VoiceProfileRow extends DataClass implements Insertable<VoiceProfileRow> {
     sampleAudioPath: sampleAudioPath.present
         ? sampleAudioPath.value
         : this.sampleAudioPath,
+    echovoicePath: echovoicePath.present
+        ? echovoicePath.value
+        : this.echovoicePath,
     pitchShift: pitchShift ?? this.pitchShift,
     speed: speed ?? this.speed,
     pitch: pitch ?? this.pitch,
@@ -2019,6 +2063,9 @@ class VoiceProfileRow extends DataClass implements Insertable<VoiceProfileRow> {
       sampleAudioPath: data.sampleAudioPath.present
           ? data.sampleAudioPath.value
           : this.sampleAudioPath,
+      echovoicePath: data.echovoicePath.present
+          ? data.echovoicePath.value
+          : this.echovoicePath,
       pitchShift: data.pitchShift.present
           ? data.pitchShift.value
           : this.pitchShift,
@@ -2038,6 +2085,7 @@ class VoiceProfileRow extends DataClass implements Insertable<VoiceProfileRow> {
           ..write('systemVoiceId: $systemVoiceId, ')
           ..write('systemVoiceLocale: $systemVoiceLocale, ')
           ..write('sampleAudioPath: $sampleAudioPath, ')
+          ..write('echovoicePath: $echovoicePath, ')
           ..write('pitchShift: $pitchShift, ')
           ..write('speed: $speed, ')
           ..write('pitch: $pitch, ')
@@ -2055,6 +2103,7 @@ class VoiceProfileRow extends DataClass implements Insertable<VoiceProfileRow> {
     systemVoiceId,
     systemVoiceLocale,
     sampleAudioPath,
+    echovoicePath,
     pitchShift,
     speed,
     pitch,
@@ -2071,6 +2120,7 @@ class VoiceProfileRow extends DataClass implements Insertable<VoiceProfileRow> {
           other.systemVoiceId == this.systemVoiceId &&
           other.systemVoiceLocale == this.systemVoiceLocale &&
           other.sampleAudioPath == this.sampleAudioPath &&
+          other.echovoicePath == this.echovoicePath &&
           other.pitchShift == this.pitchShift &&
           other.speed == this.speed &&
           other.pitch == this.pitch &&
@@ -2085,6 +2135,7 @@ class VoiceProfilesCompanion extends UpdateCompanion<VoiceProfileRow> {
   final Value<String?> systemVoiceId;
   final Value<String?> systemVoiceLocale;
   final Value<String?> sampleAudioPath;
+  final Value<String?> echovoicePath;
   final Value<double> pitchShift;
   final Value<double> speed;
   final Value<double> pitch;
@@ -2098,6 +2149,7 @@ class VoiceProfilesCompanion extends UpdateCompanion<VoiceProfileRow> {
     this.systemVoiceId = const Value.absent(),
     this.systemVoiceLocale = const Value.absent(),
     this.sampleAudioPath = const Value.absent(),
+    this.echovoicePath = const Value.absent(),
     this.pitchShift = const Value.absent(),
     this.speed = const Value.absent(),
     this.pitch = const Value.absent(),
@@ -2112,6 +2164,7 @@ class VoiceProfilesCompanion extends UpdateCompanion<VoiceProfileRow> {
     this.systemVoiceId = const Value.absent(),
     this.systemVoiceLocale = const Value.absent(),
     this.sampleAudioPath = const Value.absent(),
+    this.echovoicePath = const Value.absent(),
     this.pitchShift = const Value.absent(),
     this.speed = const Value.absent(),
     this.pitch = const Value.absent(),
@@ -2129,6 +2182,7 @@ class VoiceProfilesCompanion extends UpdateCompanion<VoiceProfileRow> {
     Expression<String>? systemVoiceId,
     Expression<String>? systemVoiceLocale,
     Expression<String>? sampleAudioPath,
+    Expression<String>? echovoicePath,
     Expression<double>? pitchShift,
     Expression<double>? speed,
     Expression<double>? pitch,
@@ -2143,6 +2197,7 @@ class VoiceProfilesCompanion extends UpdateCompanion<VoiceProfileRow> {
       if (systemVoiceId != null) 'system_voice_id': systemVoiceId,
       if (systemVoiceLocale != null) 'system_voice_locale': systemVoiceLocale,
       if (sampleAudioPath != null) 'sample_audio_path': sampleAudioPath,
+      if (echovoicePath != null) 'echovoice_path': echovoicePath,
       if (pitchShift != null) 'pitch_shift': pitchShift,
       if (speed != null) 'speed': speed,
       if (pitch != null) 'pitch': pitch,
@@ -2159,6 +2214,7 @@ class VoiceProfilesCompanion extends UpdateCompanion<VoiceProfileRow> {
     Value<String?>? systemVoiceId,
     Value<String?>? systemVoiceLocale,
     Value<String?>? sampleAudioPath,
+    Value<String?>? echovoicePath,
     Value<double>? pitchShift,
     Value<double>? speed,
     Value<double>? pitch,
@@ -2173,6 +2229,7 @@ class VoiceProfilesCompanion extends UpdateCompanion<VoiceProfileRow> {
       systemVoiceId: systemVoiceId ?? this.systemVoiceId,
       systemVoiceLocale: systemVoiceLocale ?? this.systemVoiceLocale,
       sampleAudioPath: sampleAudioPath ?? this.sampleAudioPath,
+      echovoicePath: echovoicePath ?? this.echovoicePath,
       pitchShift: pitchShift ?? this.pitchShift,
       speed: speed ?? this.speed,
       pitch: pitch ?? this.pitch,
@@ -2202,6 +2259,9 @@ class VoiceProfilesCompanion extends UpdateCompanion<VoiceProfileRow> {
     }
     if (sampleAudioPath.present) {
       map['sample_audio_path'] = Variable<String>(sampleAudioPath.value);
+    }
+    if (echovoicePath.present) {
+      map['echovoice_path'] = Variable<String>(echovoicePath.value);
     }
     if (pitchShift.present) {
       map['pitch_shift'] = Variable<double>(pitchShift.value);
@@ -2233,6 +2293,7 @@ class VoiceProfilesCompanion extends UpdateCompanion<VoiceProfileRow> {
           ..write('systemVoiceId: $systemVoiceId, ')
           ..write('systemVoiceLocale: $systemVoiceLocale, ')
           ..write('sampleAudioPath: $sampleAudioPath, ')
+          ..write('echovoicePath: $echovoicePath, ')
           ..write('pitchShift: $pitchShift, ')
           ..write('speed: $speed, ')
           ..write('pitch: $pitch, ')
@@ -3888,6 +3949,7 @@ typedef $$VoiceProfilesTableCreateCompanionBuilder =
       Value<String?> systemVoiceId,
       Value<String?> systemVoiceLocale,
       Value<String?> sampleAudioPath,
+      Value<String?> echovoicePath,
       Value<double> pitchShift,
       Value<double> speed,
       Value<double> pitch,
@@ -3903,6 +3965,7 @@ typedef $$VoiceProfilesTableUpdateCompanionBuilder =
       Value<String?> systemVoiceId,
       Value<String?> systemVoiceLocale,
       Value<String?> sampleAudioPath,
+      Value<String?> echovoicePath,
       Value<double> pitchShift,
       Value<double> speed,
       Value<double> pitch,
@@ -3947,6 +4010,11 @@ class $$VoiceProfilesTableFilterComposer
 
   ColumnFilters<String> get sampleAudioPath => $composableBuilder(
     column: $table.sampleAudioPath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get echovoicePath => $composableBuilder(
+    column: $table.echovoicePath,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4015,6 +4083,11 @@ class $$VoiceProfilesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get echovoicePath => $composableBuilder(
+    column: $table.echovoicePath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<double> get pitchShift => $composableBuilder(
     column: $table.pitchShift,
     builder: (column) => ColumnOrderings(column),
@@ -4074,6 +4147,11 @@ class $$VoiceProfilesTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get echovoicePath => $composableBuilder(
+    column: $table.echovoicePath,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<double> get pitchShift => $composableBuilder(
     column: $table.pitchShift,
     builder: (column) => column,
@@ -4129,6 +4207,7 @@ class $$VoiceProfilesTableTableManager
                 Value<String?> systemVoiceId = const Value.absent(),
                 Value<String?> systemVoiceLocale = const Value.absent(),
                 Value<String?> sampleAudioPath = const Value.absent(),
+                Value<String?> echovoicePath = const Value.absent(),
                 Value<double> pitchShift = const Value.absent(),
                 Value<double> speed = const Value.absent(),
                 Value<double> pitch = const Value.absent(),
@@ -4142,6 +4221,7 @@ class $$VoiceProfilesTableTableManager
                 systemVoiceId: systemVoiceId,
                 systemVoiceLocale: systemVoiceLocale,
                 sampleAudioPath: sampleAudioPath,
+                echovoicePath: echovoicePath,
                 pitchShift: pitchShift,
                 speed: speed,
                 pitch: pitch,
@@ -4157,6 +4237,7 @@ class $$VoiceProfilesTableTableManager
                 Value<String?> systemVoiceId = const Value.absent(),
                 Value<String?> systemVoiceLocale = const Value.absent(),
                 Value<String?> sampleAudioPath = const Value.absent(),
+                Value<String?> echovoicePath = const Value.absent(),
                 Value<double> pitchShift = const Value.absent(),
                 Value<double> speed = const Value.absent(),
                 Value<double> pitch = const Value.absent(),
@@ -4170,6 +4251,7 @@ class $$VoiceProfilesTableTableManager
                 systemVoiceId: systemVoiceId,
                 systemVoiceLocale: systemVoiceLocale,
                 sampleAudioPath: sampleAudioPath,
+                echovoicePath: echovoicePath,
                 pitchShift: pitchShift,
                 speed: speed,
                 pitch: pitch,

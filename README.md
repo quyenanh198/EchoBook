@@ -15,7 +15,8 @@ A single Dart codebase covers Windows desktop (the primary target for this build
 | Ebook parsing | `epubx` (EPUB), `syncfusion_flutter_pdf` (PDF text/outline extraction), built-in TXT parser |
 | Live TTS (Listen Mode) | `flutter_tts` on Windows/Android/iOS/macOS, wrapping each platform's native offline engine (SAPI5/OneCore on Windows, `AVSpeechSynthesizer` on iOS, `TextToSpeech` on Android). **Linux** has no `flutter_tts` implementation at all, so it gets a dedicated offline engine backed by the `espeak-ng` CLI instead (see [Linux TTS](#linux-tts-and-vietnamese-support) below) |
 | Offline audio export | Platform-specific file synthesizers (see below) + a pure-Dart WAV concatenator, optionally piped through a system `ffmpeg` for MP3/M4A |
-| Voice cloning | Beta: pitch-calibrates a real system voice from a recorded sample (see [Voice cloning](#voice-cloning-beta)) |
+| Voice cloning | Beta everywhere: pitch-calibrates a real system voice from a recorded sample. On Windows, a standalone local Python AI Server (`ai_server/`) additionally extracts a real speaker embedding and saves it as a `.echovoice` file (see [Voice cloning](#voice-cloning-beta-and-the-local-ai-server)) |
+| Vietnamese TTS | `espeak-ng` (Linux), Piper via the local AI Server (Windows), OS voice packs elsewhere — see the two sections above |
 
 Everything above runs fully offline. Nothing in the app calls out to the network.
 
@@ -76,11 +77,16 @@ This keeps the offline-first promise honest — it's an optional local tool, nev
 - macOS: `brew install ffmpeg`
 - Linux: your package manager's `ffmpeg` package
 
-### Voice cloning (Beta)
+### Voice cloning (Beta) and the local AI Server
 
-Real neural voice cloning (e.g. Coqui XTTS) needs a multi-hundred-MB model and realistically a GPU to run at usable speed — not something that can be bundled or run offline on an average phone or laptop today. EchoBook's cloning flow is deliberately labeled **Beta** and works differently: you record or upload a sample, pick a base system voice, and the app estimates your sample's rough pitch (a lightweight zero-crossing-rate analysis, `services/voice_clone/wav_pitch_estimator.dart`) to nudge that system voice's pitch toward yours. It is a real, if modest, personalization — not a synthesis of your actual voice or timbre.
+Real neural voice cloning (e.g. Coqui XTTS) needs a multi-hundred-MB model and realistically a GPU to run at usable speed — not something the Flutter app itself can bundle or run on an average phone or laptop. EchoBook's cloning flow is deliberately labeled **Beta** and layers two things:
 
-The architecture keeps the upgrade path open: `VoiceProfile.sampleAudioPath` is already stored for a future real cloning model to train/embed from, and every caller depends only on the resulting `VoiceProfile` row — swapping in a heavier model later means replacing `VoiceCloneService`'s internals, not any of its callers.
+1. **Always, on every platform** — you record or upload a sample, pick a base system voice, and the app estimates your sample's rough pitch (a lightweight zero-crossing-rate analysis, `services/voice_clone/wav_pitch_estimator.dart`) to nudge that system voice's pitch toward yours. A real, if modest, personalization — not a synthesis of your actual voice or timbre.
+2. **On Windows, when the local AI Server is running** — `ai_server/` is a standalone Python FastAPI process (see `ai_server/README.md`) that extracts a real 256-dim speaker embedding ("voice gene") from the sample with a pretrained encoder ([Resemblyzer](https://github.com/resemble-ai/Resemblyzer)) and saves it as a portable `<name>.echovoice` JSON file. `lib/services/voice_clone/ai_server_manager.dart` spawns/stops that process automatically; `ai_server_client.dart` calls it from `VoiceCloneService`, falling back silently to (1) if the server isn't reachable. **Mobile doesn't run any of this** — it only ever *imports* a `.echovoice` file (Voices → "Import .echovoice"), no local ML needed.
+
+The embedding isn't wired into playback yet — genuine embedding-conditioned synthesis (feeding it into a model like XTTS/YourTTS so playback actually sounds like the recording) is a deliberately separate future upgrade. Capturing and storing it now (`VoiceProfile.echovoicePath`) means that upgrade only needs a new synthesis backend swapped into `ai_server/`, not a new capture pipeline, and not any change to how other platforms produce or import `.echovoice` files.
+
+The AI Server's other job is `POST /tts/speak`: offline, neural-quality reading via [Piper](https://github.com/rhasspy/piper) — EchoBook's standard Vietnamese reader on Windows, since Piper ships real Vietnamese voices rather than depending on an OS language pack. See `ai_server/README.md` for the Piper binary/voice-model setup.
 
 ### Known limitations
 
@@ -89,6 +95,8 @@ The architecture keeps the upgrade path open: `VoiceProfile.sampleAudioPath` is 
 - **Vietnamese (or other non-English) TTS voices on Windows/Android/iOS** depend on OS-level language packs, not on EchoBook itself — install them via Windows Settings → Time & Language → Speech → Add voices (or the Android/iOS equivalent). The app lists whatever the OS reports. **On Linux**, Vietnamese works out of the box via the bundled-dependency `espeak-ng` backend — see [Linux TTS](#linux-tts-and-vietnamese-support) above.
 - **Background audio on mobile** — Listen Mode keeps playing while you switch tabs inside the app (it's one process), but continuing playback while the app is fully backgrounded/screen-locked on Android/iOS needs a foreground audio service entitlement this build doesn't configure yet.
 - **PDF chapters** without a bookmark/outline fall back to fixed-size page groups (e.g. "Pages 1-12") rather than true chapter titles — PDFs don't have a structural concept of "chapter" without one.
+- **The local AI Server (`ai_server/`) is Windows-only** and is a separate process you set up yourself (see `ai_server/README.md`) — it isn't packaged into the Flutter build in this repo yet (that's `package_windows.bat`, still to be built). Without it, cloning transparently falls back to the pitch-shift approximation, and `/tts/speak` (Piper) simply isn't available. The Piper Vietnamese voice model is a separate manual download from Hugging Face (see that README) since it's a few hundred MB and not something to bundle in source control.
+- **`.echovoice` embeddings aren't used for playback yet** — they're captured and stored for a future embedding-conditioned synthesis upgrade (e.g. XTTS/YourTTS). Today, a voice cloned via the AI Server still plays back through the pitch-shift-approximated system voice, same as any other Beta-cloned profile.
 
 ## Getting started (development)
 

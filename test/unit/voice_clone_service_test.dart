@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -68,5 +69,77 @@ void main() {
     );
 
     expect(profile.isDefault, isFalse);
+  });
+
+  group('importEchovoice', () {
+    test('imports a valid .echovoice file with no local processing', () async {
+      final echovoicePath = p.join(tempDir.path, 'imported.echovoice');
+      await File(echovoicePath).writeAsString(jsonEncode({
+        'format': 'echovoice',
+        'version': 1,
+        'name': 'Ba Voice',
+        'createdAt': '2026-01-01T00:00:00Z',
+        'sampleRate': 16000,
+        'embeddingModel': 'resemblyzer-ge2e',
+        'embeddingDim': 3,
+        'embedding': [0.1, 0.2, 0.3],
+      }));
+
+      final service = VoiceCloneService(voiceRepository);
+      final profile = await service.importEchovoice(
+        echovoiceFilePath: echovoicePath,
+        baseVoice: const SystemVoice(name: 'vi-VN-Piper', locale: 'vi-VN'),
+      );
+
+      expect(profile.name, 'Ba Voice');
+      expect(profile.kind, VoiceKind.cloned);
+      expect(profile.echovoicePath, echovoicePath);
+      expect(profile.systemVoiceLocale, 'vi-VN');
+      // No sample recording is involved in an import — nothing to derive
+      // a pitch-shift approximation from.
+      expect(profile.sampleAudioPath, isNull);
+    });
+
+    test('falls back to the file name when the .echovoice has no name field', () async {
+      final echovoicePath = p.join(tempDir.path, 'nameless.echovoice');
+      await File(echovoicePath).writeAsString(jsonEncode({
+        'format': 'echovoice',
+        'version': 1,
+        'embedding': [0.1],
+      }));
+
+      final service = VoiceCloneService(voiceRepository);
+      final profile = await service.importEchovoice(
+        echovoiceFilePath: echovoicePath,
+        baseVoice: const SystemVoice(name: 'x', locale: 'en'),
+      );
+
+      expect(profile.name, 'nameless');
+    });
+
+    test('rejects a file that is not a valid .echovoice payload', () async {
+      final badPath = p.join(tempDir.path, 'bad.echovoice');
+      await File(badPath).writeAsString(jsonEncode({'format': 'something_else'}));
+
+      final service = VoiceCloneService(voiceRepository);
+      expect(
+        () => service.importEchovoice(
+          echovoiceFilePath: badPath,
+          baseVoice: const SystemVoice(name: 'x', locale: 'en'),
+        ),
+        throwsFormatException,
+      );
+    });
+
+    test('rejects a path that does not exist', () async {
+      final service = VoiceCloneService(voiceRepository);
+      expect(
+        () => service.importEchovoice(
+          echovoiceFilePath: p.join(tempDir.path, 'missing.echovoice'),
+          baseVoice: const SystemVoice(name: 'x', locale: 'en'),
+        ),
+        throwsArgumentError,
+      );
+    });
   });
 }

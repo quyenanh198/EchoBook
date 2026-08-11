@@ -68,6 +68,11 @@ class VoiceProfiles extends Table {
   TextColumn get systemVoiceId => text().nullable()();
   TextColumn get systemVoiceLocale => text().nullable()();
   TextColumn get sampleAudioPath => text().nullable()();
+  /// Path to a `.echovoice` file (speaker embedding produced by the local
+  /// AI Server, or imported from one) — see `ai_server/` and
+  /// `VoiceCloneService`. Null for profiles that only have the offline
+  /// pitch-shift approximation.
+  TextColumn get echovoicePath => text().nullable()();
   RealColumn get pitchShift => real().withDefault(const Constant(0))();
   RealColumn get speed => real().withDefault(const Constant(1.0))();
   RealColumn get pitch => real().withDefault(const Constant(1.0))();

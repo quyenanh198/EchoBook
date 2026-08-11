@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app.dart';
+import 'services/voice_clone/ai_server_manager.dart';
 
 void main() {
   // Catches anything that slips past a call site's own error handling
@@ -21,6 +23,17 @@ void main() {
       debugPrint('Uncaught platform error: $error\n$stack');
       return true;
     };
+
+    final aiServerManager = AiServerManager();
+    unawaited(aiServerManager.start());
+    late final AppLifecycleListener lifecycleListener;
+    lifecycleListener = AppLifecycleListener(
+      onExitRequested: () async {
+        aiServerManager.stop();
+        lifecycleListener.dispose();
+        return AppExitResponse.exit;
+      },
+    );
 
     runApp(const ProviderScope(child: EchoBookApp()));
   }, (error, stack) {

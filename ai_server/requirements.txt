@@ -1,0 +1,15 @@
+# EchoBook AI Server - install with: pip install -r requirements.txt
+# Python 3.10-3.12 recommended.
+
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30,<1.0
+python-multipart>=0.0.9
+
+# Speaker embedding extraction for voice cloning (/voice/clone).
+# Pulls in torch + librosa; first run also downloads the pretrained
+# GE2E encoder weights (a few MB, cached under ~/.cache).
+resemblyzer>=0.1.4
+numpy<2   # resemblyzer/numba's older pin; keep below numpy 2.0 to avoid ABI breaks
+
+# Packaging (optional, for package_windows.bat -> EchoBookAIServer.exe)
+pyinstaller>=6.0; sys_platform == "win32"

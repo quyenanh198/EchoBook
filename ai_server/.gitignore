@@ -1,0 +1,7 @@
+models/piper/*.onnx
+models/piper/*.onnx.json
+build/
+dist/
+*.spec
+__pycache__/
+.venv/

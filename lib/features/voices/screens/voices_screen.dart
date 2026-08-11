@@ -1,4 +1,5 @@
 import 'package:drift/drift.dart' show Value;
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -6,8 +7,10 @@ import 'package:uuid/uuid.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/utils/app_messenger.dart';
 import '../../../data/db/app_database.dart';
 import '../../../data/db/tables.dart';
+import '../../../services/tts/system_voice.dart';
 import '../providers/voices_providers.dart';
 import '../widgets/clone_voice_sheet.dart';
 import '../widgets/voice_card.dart';
@@ -74,6 +77,12 @@ class VoicesScreen extends ConsumerWidget {
             label: const Text('Add system voice'),
             onPressed: () => _showAddSystemVoiceSheet(context, ref),
           ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.file_download_outlined),
+            label: const Text('Import .echovoice'),
+            onPressed: () => _importEchovoice(context, ref),
+          ),
         ],
       ),
     );
@@ -84,6 +93,92 @@ class VoicesScreen extends ConsumerWidget {
       context: context,
       isScrollControlled: true,
       builder: (ctx) => _AddSystemVoiceSheet(),
+    );
+  }
+
+  /// Imports a `.echovoice` file — a speaker embedding produced by the
+  /// local AI Server (see `ai_server/`), e.g. shared from a Windows
+  /// machine. No local processing is needed; a base system voice is still
+  /// picked so the profile has something to actually speak with today
+  /// (embedding-conditioned synthesis is a future upgrade — see
+  /// `VoiceCloneService`).
+  Future<void> _importEchovoice(BuildContext context, WidgetRef ref) async {
+    final FilePickerResult? result;
+    try {
+      result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['echovoice'],
+      );
+    } catch (e) {
+      AppMessenger.showError('Could not open file picker: $e');
+      return;
+    }
+    final path = result?.files.single.path;
+    if (path == null) return;
+    if (!context.mounted) return;
+
+    final baseVoice = await showModalBottomSheet<SystemVoice>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => const _PickBaseVoiceSheet(),
+    );
+    if (baseVoice == null) return;
+
+    try {
+      await ref.read(voiceCloneServiceProvider).importEchovoice(
+            echovoiceFilePath: path,
+            baseVoice: baseVoice,
+          );
+    } catch (e) {
+      AppMessenger.showError('Could not import $path: $e');
+    }
+  }
+}
+
+class _PickBaseVoiceSheet extends ConsumerWidget {
+  const _PickBaseVoiceSheet();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final voicesAsync = ref.watch(systemVoicesProvider);
+
+    return SafeArea(
+      child: DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        minChildSize: 0.3,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (ctx, scrollController) {
+          return voicesAsync.when(
+            data: (voices) => Column(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text('Pick a voice to read with for now'),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: ListView.builder(
+                    controller: scrollController,
+                    itemCount: voices.length,
+                    itemBuilder: (ctx, i) {
+                      final voice = voices[i];
+                      return ListTile(
+                        leading: const Icon(Icons.record_voice_over_outlined),
+                        title: Text(voice.name),
+                        subtitle: Text(voice.locale),
+                        onTap: () => Navigator.pop(ctx, voice),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => Center(child: Text('No system voices found: $e')),
+          );
+        },
+      ),
     );
   }
 }
