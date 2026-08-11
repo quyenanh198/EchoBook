@@ -405,6 +405,12 @@ class PlayerController extends StateNotifier<PlayerState> {
 
   @override
   void dispose() {
+    // Invalidates any in-flight _runLoop iteration mid-utterance — without
+    // this, a pending `_engine.speak()` that resolves right after
+    // `_engine.dispose()` kills it would still see `token == _playToken`
+    // and fall through to touching `_ref`/`state` on an already-disposed
+    // controller.
+    _playToken++;
     _cancelSleepTimer();
     try {
       _engine.dispose();

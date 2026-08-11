@@ -9,10 +9,24 @@ import 'package:echobook/services/tts/system_voice.dart';
 import 'package:echobook/services/voice_clone/voice_clone_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 
 import '../test_utils/wav_fixture.dart';
 
+/// Points `VoicePaths` (used by `importEchovoice` to copy a picked file
+/// into app-managed storage) at the test's own temp directory instead of
+/// hitting a real, unmocked platform channel.
+class _FakePathProviderPlatform extends PathProviderPlatform {
+  final String path;
+  _FakePathProviderPlatform(this.path);
+
+  @override
+  Future<String?> getApplicationDocumentsPath() async => path;
+}
+
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late AppDatabase db;
   late VoiceRepository voiceRepository;
   late Directory tempDir;
@@ -21,6 +35,7 @@ void main() {
     db = AppDatabase(NativeDatabase.memory());
     voiceRepository = VoiceRepository(db);
     tempDir = await Directory.systemTemp.createTemp('echobook_clone_test_');
+    PathProviderPlatform.instance = _FakePathProviderPlatform(tempDir.path);
   });
 
   tearDown(() async {
@@ -93,11 +108,19 @@ void main() {
 
       expect(profile.name, 'Ba Voice');
       expect(profile.kind, VoiceKind.cloned);
-      expect(profile.echovoicePath, echovoicePath);
       expect(profile.systemVoiceLocale, 'vi-VN');
       // No sample recording is involved in an import — nothing to derive
       // a pitch-shift approximation from.
       expect(profile.sampleAudioPath, isNull);
+
+      // The picked file gets copied into app-managed storage rather than
+      // referenced in place — so the profile survives the original file
+      // (e.g. a Downloads folder, a USB drive) moving or disappearing.
+      expect(profile.echovoicePath, isNot(echovoicePath));
+      expect(await File(profile.echovoicePath!).exists(), isTrue);
+      final copiedContent = jsonDecode(await File(profile.echovoicePath!).readAsString());
+      expect(copiedContent['name'], 'Ba Voice');
+      expect(copiedContent['embedding'], [0.1, 0.2, 0.3]);
     });
 
     test('falls back to the file name when the .echovoice has no name field', () async {

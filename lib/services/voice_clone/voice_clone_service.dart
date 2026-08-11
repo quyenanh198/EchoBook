@@ -5,6 +5,7 @@ import 'package:drift/drift.dart';
 import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 
+import '../../core/utils/voice_paths.dart';
 import '../../data/db/app_database.dart';
 import '../../data/db/tables.dart';
 import '../../data/repositories/voice_repository.dart';
@@ -43,8 +44,13 @@ class VoiceCloneService {
     required String sampleAudioPath,
     required SystemVoice baseVoice,
   }) async {
-    final pitchShift = await WavPitchEstimator.estimatePitchShift(sampleAudioPath);
-    final echovoicePath = await _tryCloneViaAiServer(name: name, sampleAudioPath: sampleAudioPath);
+    // Both started before either is awaited, so the (up to 60s) AI Server
+    // round trip overlaps with the local pitch estimate instead of adding
+    // to it — the two are independent of each other.
+    final pitchShiftFuture = WavPitchEstimator.estimatePitchShift(sampleAudioPath);
+    final echovoicePathFuture = _tryCloneViaAiServer(name: name, sampleAudioPath: sampleAudioPath);
+    final pitchShift = await pitchShiftFuture;
+    final echovoicePath = await echovoicePathFuture;
 
     final id = _uuid.v4();
     await _voiceRepository.upsert(VoiceProfilesCompanion.insert(
@@ -83,8 +89,12 @@ class VoiceCloneService {
 
   /// Imports a `.echovoice` file (produced by the AI Server, e.g. shared
   /// from a Windows machine) as a new cloned voice profile. No local
-  /// processing is needed — this is the whole point of the format: mobile
-  /// just imports it to use.
+  /// *processing* is needed — this is the whole point of the format:
+  /// mobile just imports it to use. The file itself is still copied into
+  /// app-managed storage first (like a recorded sample would be), rather
+  /// than storing a path into wherever the file picker found it (Downloads,
+  /// a USB drive, a cloud-sync folder) — otherwise the profile silently
+  /// breaks the moment that external file moves or disappears.
   Future<VoiceProfileRow> importEchovoice({
     required String echovoiceFilePath,
     required SystemVoice baseVoice,
@@ -109,13 +119,16 @@ class VoiceCloneService {
         : p.basenameWithoutExtension(echovoiceFilePath);
 
     final id = _uuid.v4();
+    final managedPath = await VoicePaths.newSamplePath(id, extension: 'echovoice');
+    await file.copy(managedPath);
+
     await _voiceRepository.upsert(VoiceProfilesCompanion.insert(
       id: id,
       name: name,
       kind: VoiceKind.cloned,
       systemVoiceId: Value(baseVoice.name),
       systemVoiceLocale: Value(baseVoice.locale),
-      echovoicePath: Value(echovoiceFilePath),
+      echovoicePath: Value(managedPath),
       createdAt: DateTime.now(),
     ));
 

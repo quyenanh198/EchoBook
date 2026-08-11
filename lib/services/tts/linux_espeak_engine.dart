@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'espeak_params.dart';
 import 'system_voice.dart';
 import 'voice_engine.dart';
 
@@ -77,12 +78,12 @@ class LinuxEspeakEngine implements VoiceEngine {
 
   @override
   Future<void> setSpeed(double speed) async {
-    _wpm = (175 * speed.clamp(0.5, 3.0)).round().clamp(80, 500);
+    _wpm = EspeakParams.wpmFor(speed);
   }
 
   @override
   Future<void> setPitch(double pitch) async {
-    _pitchArg = (50 * pitch.clamp(0.5, 2.0)).round().clamp(0, 99);
+    _pitchArg = EspeakParams.pitchArgFor(pitch);
   }
 
   @override

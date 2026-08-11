@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'espeak_params.dart';
 import 'tts_file_synthesizer.dart';
 
 /// Offline WAV rendering on Linux via the `espeak-ng` CLI — the same engine
@@ -28,8 +29,8 @@ class LinuxEspeakFileSynthesizer implements TtsFileSynthesizer {
     // this app lists (see LinuxEspeakEngine.parseVoicesOutput) — fall back
     // to English if the profile predates that convention or was left blank.
     final voiceId = (voiceLocale != null && voiceLocale.isNotEmpty) ? voiceLocale : 'en-us';
-    final wpm = (175 * speed.clamp(0.5, 3.0)).round().clamp(80, 500);
-    final pitchArg = (50 * pitch.clamp(0.5, 2.0)).round().clamp(0, 99);
+    final wpm = EspeakParams.wpmFor(speed);
+    final pitchArg = EspeakParams.pitchArgFor(pitch);
 
     Process process;
     try {

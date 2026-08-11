@@ -46,13 +46,19 @@ class AiServerClient {
       ..fields['name'] = name
       ..files.add(await http.MultipartFile.fromPath('sample', sampleWavPath));
 
-    final http.StreamedResponse streamedResponse;
+    final http.Response response;
     try {
-      streamedResponse = await request.send().timeout(cloneTimeout);
+      // Timing out `.send()` alone only bounds how long headers take to
+      // arrive — a stall while the body streams in afterward would hang
+      // this indefinitely otherwise. One timeout around the whole
+      // send-then-read sequence bounds the entire call to cloneTimeout.
+      response = await Future(() async {
+        final streamedResponse = await request.send();
+        return http.Response.fromStream(streamedResponse);
+      }).timeout(cloneTimeout);
     } catch (e) {
       throw AiServerException('Could not reach the AI Server: $e');
     }
-    final response = await http.Response.fromStream(streamedResponse);
     if (response.statusCode != 200) {
       throw AiServerException('AI Server returned ${response.statusCode}: ${response.body}');
     }

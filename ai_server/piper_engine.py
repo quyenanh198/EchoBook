@@ -105,6 +105,7 @@ class PiperEngine:
             ],
             input=text,
             text=True,
+            encoding="utf-8",  # not the OS default codepage - Vietnamese diacritics need this
             capture_output=True,
         )
         if result.returncode != 0 or not out_path.exists():
